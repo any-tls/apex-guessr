@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APEX GEOGUESSR</title>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --apex-red: #DA292A;
+            --apex-bg: #1e1e1e;
+            --apex-ui-bg: rgba(0, 0, 0, 0.75);
+            --apex-text: #ffffff;
+            --apex-accent: #f5f5f5;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Rajdhani', sans-serif;
+            background-color: #000;
+            color: var(--apex-text);
+            user-select: none;
+        }
+
+        /* --- ゲーム画面全体 (ストリートビュー風) --- */
+        #game-view {
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            transition: background-image 0.5s ease;
+            position: relative;
+        }
+
+        /* --- UIオーバーレイ --- */
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* UIの裏をクリックできるようにする制御は別途 */
+        }
+
+        /* --- 上部ヘッダー (ラウンド/スコア) --- */
+        .top-bar {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            display: flex;
+            gap: 20px;
+        }
+
+        .stat-box {
+            background: var(--apex-ui-bg);
+            padding: 10px 20px;
+            border-left: 4px solid var(--apex-red);
+            clip-path: polygon(0 0, 100% 0, 100% 80%, 90% 100%, 0 100%);
+            pointer-events: auto;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #ccc;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        /* --- 右下 ミニマップコンテナ --- */
+        .minimap-container {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            width: 300px;
+            height: 350px;
+            background: var(--apex-ui-bg);
+            border: 1px solid rgba(255,255,255,0.2);
+            backdrop-filter: blur(5px);
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column;
+            clip-path: polygon(10% 0, 100% 0, 100% 100%, 0 100%, 0 10%);
+        }
+
+        .minimap-header {
+            background: var(--apex-red);
+            color: white;
+            padding: 5px 15px;
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 18px;
+            letter-spacing: 1px;
+        }
+
+        .map-wrapper {
+            position: relative;
+            flex-grow: 1;
+            margin: 10px;
+            border: 1px solid #555;
+            background-color: #222;
+            overflow: hidden;
+            cursor: crosshair;
+        }
+
+        /* ここに全体マップ画像が入ります */
+        #map-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* 実際はマップ比率に合わせてcontainにするのが良い */
+            opacity: 0.8;
+        }
+
+        .pin {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background-color: var(--apex-red);
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px var(--apex-red);
+            pointer-events: none;
+            display: none;
+        }
+
+        .pin.actual {
+            background-color: #4CAF50; /* 正解は緑 */
+            box-shadow: 0 0 10px #4CAF50;
+        }
+
+        .guess-btn {
+            margin: 0 10px 10px 10px;
+            background: var(--apex-red);
+            color: white;
+            border: none;
+            padding: 10px;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 20px;
+            font-weight: 700;
+            text-transform: uppercase;
+            cursor: pointer;
+            clip-path: polygon(0 0, 100% 0, 95% 100%, 5% 100%);
+            transition: transform 0.1s;
+        }
+
+        .guess-btn:hover {
+            transform: scale(1.02);
+            background: #ff3b3c;
+        }
+
+        .guess-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        /* --- 結果モーダル --- */
+        #result-modal {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            pointer-events: auto;
+        }
+
+        .result-box {
+            width: 500px;
+            background: #1a1a1a;
+            border-top: 5px solid var(--apex-red);
+            padding: 40px;
+            text-align: center;
+            clip-path: polygon(5% 0, 100% 0, 100% 90%, 95% 100%, 0 100%, 0 10%);
+            box-shadow: 0 0 20px rgba(218, 41, 42, 0.3);
+        }
+
+        .result-title {
+            font-size: 40px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            font-style: italic;
+        }
+
+        .result-score {
+            font-size: 60px;
+            color: var(--apex-red);
+            font-weight: 700;
+            margin: 20px 0;
+            text-shadow: 0 0 10px rgba(218, 41, 42, 0.5);
+        }
+
+        .next-btn {
+            background: white;
+            color: black;
+            border: none;
+            padding: 15px 40px;
+            font-size: 20px;
+            font-weight: 700;
+            text-transform: uppercase;
+            cursor: pointer;
+            clip-path: polygon(10% 0, 100% 0, 100% 100%, 0 100%);
+        }
+        
+        .next-btn:hover {
+            background: #ddd;
+        }
+
+        /* ライン描画用のCanvas */
+        #line-canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="game-view" style="background-image: url('https://placehold.co/1920x1080/333/999?text=Target+Location+View');"></div>
+
+    <div class="ui-layer">
+        <div class="top-bar">
+            <div class="stat-box">
+                <div class="stat-label">Round</div>
+                <div class="stat-value"><span id="round-disp">1</span> / 5</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Total RP</div>
+                <div class="stat-value" id="score-disp">0</div>
+            </div>
+        </div>
+
+        <div class="minimap-container">
+            <div class="minimap-header">Select Location</div>
+            <div class="map-wrapper" id="map-wrapper">
+                <img id="map-image" src="https://placehold.co/500x500/111/444?text=MAP+IMAGE" alt="Minimap">
+                
+                <div id="user-pin" class="pin"></div>
+                <div id="answer-pin" class="pin actual"></div>
+                <canvas id="line-canvas"></canvas>
+            </div>
+            <button id="guess-btn" class="guess-btn">Ping Location</button>
+        </div>
+    </div>
+
+    <div id="result-modal">
+        <div class="result-box">
+            <div class="result-title" id="result-title">Round Complete</div>
+            <div style="font-size: 18px; color: #aaa;">DISTANCE: <span id="dist-disp">0</span>m</div>
+            <div class="result-score">+ <span id="round-score">0</span> RP</div>
+            <button class="next-btn" id="next-btn">Next Round</button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * ★ 設定エリア ★
+         * 自分の好きな画像URLに書き換えてください。
+         * x, y はマップ画像上のパーセンテージ (0〜100) です。
+         * 左上が(0,0)、右下が(100,100)
+         */
+        const gameData = [
+            {
+                // 例: キャピトルシティ周辺の画像
+                viewUrl: "https://placehold.co/1920x1080/222/FFF?text=Location+1:+Capitol+City", 
+                x: 50, // マップ横方向の50%の位置
+                y: 40  // マップ縦方向の40%の位置
+            },
+            {
+                viewUrl: "https://placehold.co/1920x1080/333/FFF?text=Location+2:+Thermal+Station",
+                x: 20,
+                y: 80
+            },
+            {
+                viewUrl: "https://placehold.co/1920x1080/444/FFF?text=Location+3:+Skyhook",
+                x: 80,
+                y: 20
+            },
+            {
+                viewUrl: "https://placehold.co/1920x1080/555/FFF?text=Location+4:+Train+Yard",
+                x: 40,
+                y: 50
+            },
+            {
+                viewUrl: "https://placehold.co/1920x1080/666/FFF?text=Location+5:+Epicenter",
+                x: 60,
+                y: 35
+            }
+        ];
+
+        // マップ画像のURL（全体マップ）
+        const mapImageUrl = "https://placehold.co/500x500/111/444?text=APEX+MAP"; 
+        document.getElementById('map-image').src = mapImageUrl;
+
+        // ゲーム状態
+        let currentRound = 0;
+        let totalScore = 0;
+        let selectedCoords = null; // {x, y} %
+        let isRoundActive = true;
+
+        // DOM要素
+        const viewEl = document.getElementById('game-view');
+        const mapWrapper = document.getElementById('map-wrapper');
+        const userPin = document.getElementById('user-pin');
+        const answerPin = document.getElementById('answer-pin');
+        const guessBtn = document.getElementById('guess-btn');
+        const resultModal = document.getElementById('result-modal');
+        const nextBtn = document.getElementById('next-btn');
+        const canvas = document.getElementById('line-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // 初期化
+        function initGame() {
+            loadRound();
+        }
+
+        // ラウンド読み込み
+        function loadRound() {
+            if (currentRound >= gameData.length) {
+                // ゲーム終了
+                showFinalResult();
+                return;
+            }
+
+            const data = gameData[currentRound];
+            viewEl.style.backgroundImage = `url('${data.viewUrl}')`;
+            
+            // UIリセット
+            document.getElementById('round-disp').innerText = currentRound + 1;
+            selectedCoords = null;
+            userPin.style.display = 'none';
+            answerPin.style.display = 'none';
+            guessBtn.disabled = true; // ピンを刺すまで押せない
+            guessBtn.innerText = "PING LOCATION";
+            isRoundActive = true;
+            
+            // キャンバスクリア
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // マップクリック処理
+        mapWrapper.addEventListener('click', (e) => {
+            if (!isRoundActive) return;
+
+            const rect = mapWrapper.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            // %に変換
+            const xPct = (clickX / rect.width) * 100;
+            const yPct = (clickY / rect.height) * 100;
+
+            selectedCoords = { x: xPct, y: yPct };
+
+            // ピン表示
+            userPin.style.left = xPct + '%';
+            userPin.style.top = yPct + '%';
+            userPin.style.display = 'block';
+
+            guessBtn.disabled = false;
+        });
+
+        // 決定ボタン
+        guessBtn.addEventListener('click', () => {
+            if (!selectedCoords || !isRoundActive) return;
+            isRoundActive = false;
+
+            const target = gameData[currentRound];
+            
+            // 距離計算（簡易的なユークリッド距離）
+            const dx = selectedCoords.x - target.x;
+            const dy = selectedCoords.y - target.y;
+            const distance = Math.sqrt(dx*dx + dy*dy); // 0〜約141
+
+            // スコア計算 (距離が近いほど高得点、最大1000RP)
+            // 許容誤差範囲などを調整可能
+            let score = Math.max(0, 1000 - Math.floor(distance * 50));
+            
+            // 距離をメートル換算っぽく見せる（適当な係数）
+            const displayDist = Math.floor(distance * 20); 
+
+            // 正解ピン表示
+            answerPin.style.left = target.x + '%';
+            answerPin.style.top = target.y + '%';
+            answerPin.style.display = 'block';
+
+            // 線を引く
+            drawResultLine(selectedCoords.x, selectedCoords.y, target.x, target.y);
+
+            // 結果表示
+            setTimeout(() => {
+                totalScore += score;
+                document.getElementById('score-disp').innerText = totalScore;
+                document.getElementById('round-score').innerText = score;
+                document.getElementById('dist-disp').innerText = displayDist;
+                document.getElementById('result-title').innerText = getRankTitle(score);
+                resultModal.style.display = 'flex';
+                
+                if (currentRound >= gameData.length - 1) {
+                    nextBtn.innerText = "VIEW CHAMPION";
+                } else {
+                    nextBtn.innerText = "NEXT ROUND";
+                }
+            }, 1000);
+        });
+
+        // 次へボタン
+        nextBtn.addEventListener('click', () => {
+            resultModal.style.display = 'none';
+            if (currentRound >= gameData.length - 1) {
+                // 最終リザルト的なもの（ここでは簡易的にアラートかリロード）
+                alert(`GAME OVER! TOTAL RP: ${totalScore}`);
+                location.reload();
+            } else {
+                currentRound++;
+                loadRound();
+            }
+        });
+
+        // ピン間に線を引く
+        function drawResultLine(x1, y1, x2, y2) {
+            canvas.width = mapWrapper.clientWidth;
+            canvas.height = mapWrapper.clientHeight;
+
+            const startX = (x1 / 100) * canvas.width;
+            const startY = (y1 / 100) * canvas.height;
+            const endX = (x2 / 100) * canvas.width;
+            const endY = (y2 / 100) * canvas.height;
+
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(endX, endY);
+            ctx.strokeStyle = '#DA292A'; // Apex Red
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]); // 点線
+            ctx.stroke();
+        }
+
+        // スコアに応じた称号
+        function getRankTitle(score) {
+            if (score === 1000) return "PERFECT!";
+            if (score > 800) return "DIAMOND";
+            if (score > 500) return "PLATINUM";
+            if (score > 200) return "GOLD";
+            return "ROOKIE";
+        }
+
+        // 開始
+        initGame();
+
+    </script>
+</body>
+</html>
